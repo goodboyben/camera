@@ -31,6 +31,6 @@ Just a simple, private, offline camera application
 
 * Download the latest Camera.zip from the Releases tab.
 * Ensure all of the files are extracted and contained within a single directory.
-* Run Camera.exe
+* Run CameraLauncher.exe
 
 A browser window should open, and you'll be all set!
