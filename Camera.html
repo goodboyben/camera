@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Camera</title>
+    <link rel="icon" type="image/x-icon" href="Camera_icon.ico">
+    <style>
+        :root {
+            --bg-dark: #000000;
+            --bg-panel: #111111;
+            --text-light: #ffffff;
+            --accent: #ffd60a;
+            --danger: #ff453a;
+            --overlay: rgba(0, 0, 0, 0.5);
+            --blur: blur(15px);
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: var(--bg-dark); color: var(--text-light); overflow: hidden; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+
+        /* Camera & Audio View */
+        #camera-container { position: relative; flex-grow: 1; width: 100%; background-color: var(--bg-panel); display: flex; justify-content: center; align-items: center; overflow: hidden; }
+        #camera-view { width: 100%; height: 100%; object-fit: cover; position: absolute; z-index: 1; transform-origin: center; transition: filter 0.1s; }
+        
+        #audio-visualizer { width: 100%; height: 100%; position: absolute; z-index: 3; display: none; background: #050505; flex-direction: column; justify-content: center; align-items: center; }
+        .mic-icon { width: 80px; height: 80px; border-radius: 50%; background: #222; display: flex; justify-content: center; align-items: center; margin-bottom: 20px; box-shadow: 0 0 20px rgba(255,214,10,0.2); transition: transform 0.1s; }
+        .mic-icon svg { width: 40px; height: 40px; fill: var(--accent); }
+        
+        #recording-timer { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); padding: 5px 12px; border-radius: 15px; font-variant-numeric: tabular-nums; font-weight: bold; font-size: 14px; z-index: 20; display: none; align-items: center; gap: 8px; backdrop-filter: var(--blur); border: 1px solid rgba(255,255,255,0.1); }
+        .red-dot { width: 8px; height: 8px; background: var(--danger); border-radius: 50%; animation: blink 1s infinite; }
+        @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.3;} 100% {opacity: 1;} }
+
+        /* UI Overlay */
+        .ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+        .top-bar { padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; pointer-events: auto; background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, transparent 100%); gap: 10px; }
+        .top-controls-group { display: flex; gap: 15px; }
+        
+        .icon-btn { background: var(--overlay); backdrop-filter: var(--blur); border: 1px solid rgba(255,255,255,0.2); color: var(--text-light); width: 44px; height: 44px; border-radius: 22px; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 11px; font-weight: 500; }
+        .icon-btn.active { color: var(--accent); border-color: var(--accent); }
+
+        .pro-panel { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); background: var(--overlay); backdrop-filter: var(--blur); padding: 20px 10px; border-radius: 30px; display: none; flex-direction: column; align-items: center; gap: 30px; pointer-events: auto; border: 1px solid rgba(255,255,255,0.1); }
+        .slider-wrapper { display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 11px; font-weight: bold; }
+        input[type=range].vertical { -webkit-appearance: none; appearance: none; width: 100px; height: 4px; background: rgba(255,255,255,0.3); border-radius: 2px; outline: none; transform: rotate(-90deg); margin: 50px 0; }
+        input[type=range].vertical::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--text-light); }
+
+        .bottom-controls { padding: 20px; padding-bottom: 40px; display: flex; flex-direction: column; align-items: center; pointer-events: auto; background: linear-gradient(0deg, rgba(0,0,0,0.9) 0%, transparent 100%); }
+        .mode-scroller { display: flex; gap: 24px; margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; width: 100%; justify-content: center; }
+        .mode-scroller::-webkit-scrollbar { display: none; }
+        .mode-text { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.5); cursor: pointer; }
+        .mode-text.active { color: var(--accent); }
+
+        .action-row { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 400px; }
+        .gallery-preview { width: 50px; height: 50px; border-radius: 8px; background: #222; border: 2px solid rgba(255,255,255,0.2); cursor: pointer; object-fit: cover; }
+        
+        .shutter-outer { width: 76px; height: 76px; border-radius: 50%; border: 4px solid var(--text-light); display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .shutter-inner { width: 60px; height: 60px; border-radius: 50%; background-color: var(--text-light); transition: transform 0.2s; }
+        .shutter-outer:active .shutter-inner { transform: scale(0.85); }
+        .shutter-outer.recording .shutter-inner { background-color: var(--danger); border-radius: 12px; transform: scale(0.6); }
+
+        /* Full Views */
+        .full-view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); z-index: 30; display: none; flex-direction: column; }
+        .nav-bar { padding: 20px; display: flex; justify-content: space-between; align-items: center; background: var(--bg-panel); border-bottom: 1px solid #333; flex-shrink: 0; }
+        .nav-btn { background: none; border: none; color: var(--accent); font-size: 16px; cursor: pointer; font-weight: 500; }
+        
+        /* Gallery */
+        .gallery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; overflow-y: auto; flex-grow: 1; align-content: start; }
+        .gallery-item { aspect-ratio: 1; background: #222; position: relative; cursor: pointer; overflow: hidden; }
+        .gallery-item img, .gallery-item video { width: 100%; height: 100%; object-fit: cover; }
+        .gallery-item .audio-placeholder { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #1a1a1a; color: var(--accent); }
+        .media-badge { position: absolute; bottom: 5px; right: 5px; font-size: 10px; background: rgba(0,0,0,0.6); padding: 4px 6px; border-radius: 4px; font-weight: bold; }
+        .select-overlay { position: absolute; top: 5px; left: 5px; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; display: none; justify-content: center; align-items: center; background: rgba(0,0,0,0.4); }
+        .gallery-item.selected .select-overlay { display: flex; background: var(--accent); border-color: var(--accent); }
+        .gallery-item.selecting .select-overlay { display: flex; }
+        .bottom-toolbar { display: flex; justify-content: space-between; padding: 15px 20px; background: var(--bg-panel); border-top: 1px solid #333; }
+
+        /* Media Viewer */
+        #viewer-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative; background: black; }
+        #viewer-media { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .viewer-controls { display: flex; justify-content: space-around; padding: 20px; background: var(--bg-panel); border-top: 1px solid #333; }
+        .tool-btn { color: var(--text-light); background: none; border: none; cursor: pointer; font-size: 14px; }
+
+        /* Editors */
+        .editor-workspace { flex-grow: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; padding: 20px; position: relative; }
+        #edit-canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .editor-tools { padding: 20px; background: var(--bg-panel); border-top: 1px solid #333; overflow-y: auto; max-height: 40vh; }
+        .slider-group { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; font-size: 12px; color: #ccc; }
+        .slider-group input { flex-grow: 1; accent-color: var(--accent); }
+        .slider-group span { width: 40px; text-align: right; }
+
+        /* Audio Editor UI */
+        #audio-editor-canvas { width: 100%; height: 200px; background: #111; border-radius: 8px; border: 1px solid #333; cursor: pointer; }
+        .audio-effects { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; justify-content: center; }
+        .effect-btn { padding: 8px 16px; border-radius: 20px; background: #333; border: 1px solid #444; color: white; cursor: pointer; font-size: 12px; }
+        .effect-btn.active { background: var(--accent); color: black; border-color: var(--accent); font-weight: bold; }
+        .audio-toolbar { display: flex; justify-content: space-between; width: 100%; margin-top: 10px; align-items: center; }
+        .audio-toolbar button { background: #222; color: white; border: 1px solid #444; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .undo-note { font-size: 10px; color: #888; margin-left: auto; margin-right: 15px; }
+    </style>
+</head>
+<body>
+
+    <!-- SVG Definitions for Structure Filter -->
+    <svg style="display: none;">
+        <defs>
+            <filter id="struct-filter"></filter>
+        </defs>
+    </svg>
+
+    <div id="camera-container">
+        <video id="camera-view" autoplay playsinline muted></video>
+        <div id="audio-visualizer">
+            <div class="mic-icon" id="mic-indicator">
+                <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+            </div>
+        </div>
+        <div id="recording-timer"><div class="red-dot"></div><span id="timer-text">00:00</span></div>
+    </div>
+
+    <div class="ui-overlay" id="main-ui">
+        <div class="top-bar">
+            <button class="icon-btn" onclick="togglePro()" id="pro-btn" style="padding: 10px;">
+                <svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:currentColor;"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.73,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.43-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.49-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
+            </button>
+            <div class="top-controls-group">
+                <button class="icon-btn" onclick="toggleMirror()" id="mirror-btn">Mirror</button>
+            </div>
+            <button class="icon-btn" onclick="switchCamera()">⟲</button>
+        </div>
+
+        <div class="pro-panel" id="pro-panel">
+            <div class="slider-wrapper">
+                <span id="zoom-val">1.0x</span>
+                <input type="range" class="vertical" id="zoom-slider" min="1" max="4" step="0.1" value="1" oninput="updateSettings()">
+                <span>Zoom</span>
+            </div>
+            <div class="slider-wrapper">
+                <span id="exp-val">1.0</span>
+                <input type="range" class="vertical" id="exp-slider" min="0.2" max="2" step="0.1" value="1" oninput="updateSettings()">
+                <span>Exp</span>
+            </div>
+            <div class="slider-wrapper">
+                <span id="struct-val">0</span>
+                <input type="range" class="vertical" id="struct-slider" min="-1" max="1" step="0.1" value="0" oninput="updateSettings()">
+                <span>Struct</span>
+            </div>
+        </div>
+
+        <div class="bottom-controls">
+            <div class="mode-scroller">
+                <div class="mode-text active" onclick="setMode('photo', this)">PHOTO</div>
+                <div class="mode-text" onclick="setMode('video', this)">VIDEO</div>
+                <div class="mode-text" onclick="setMode('audio', this)">AUDIO</div>
+            </div>
+            <div class="action-row">
+                <img id="gallery-thumb" class="gallery-preview" onclick="openGallery()" style="visibility: hidden;">
+                <div class="shutter-outer" id="shutter-btn" onclick="handleShutter()">
+                    <div class="shutter-inner"></div>
+                </div>
+                <div style="width: 50px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="gallery-layer" class="full-view">
+        <div class="nav-bar">
+            <button class="nav-btn" onclick="closeGallery()">Close</button>
+            <span style="font-weight: 600;">Gallery</span>
+            <button class="nav-btn" onclick="toggleSelectMode()" id="select-btn">Select</button>
+        </div>
+        <div class="gallery-grid" id="gallery-grid"></div>
+        <div class="bottom-toolbar" id="gallery-toolbar" style="display: none;">
+            <button class="nav-btn" style="color: var(--danger);" onclick="deleteSelected()">Delete</button>
+        </div>
+    </div>
+
+    <div id="viewer-layer" class="full-view" style="z-index: 40;">
+        <div class="nav-bar">
+            <button class="nav-btn" onclick="closeViewer()">Back</button>
+            <span id="viewer-title" style="font-weight: 600; font-size: 14px;"></span>
+            <div style="width: 45px;"></div>
+        </div>
+        <div id="viewer-container"></div>
+        <div class="viewer-controls">
+            <button class="tool-btn" id="btn-edit" onclick="openEditor()">Edit</button>
+            <button class="tool-btn" onclick="deleteCurrentMedia()" style="color: var(--danger);">Delete</button>
+        </div>
+    </div>
+
+    <div id="img-editor-layer" class="full-view" style="z-index: 45;">
+        <div class="nav-bar">
+            <button class="nav-btn" onclick="closeImgEditor()">Cancel</button>
+            <span style="font-weight: 600;">Edit Image</span>
+            <button class="nav-btn" onclick="saveImgEdit()">Save</button>
+        </div>
+        <div class="editor-workspace">
+            <canvas id="edit-canvas"></canvas>
+        </div>
+        <div class="editor-tools">
+            <div class="slider-group"><span>Brt</span><input type="range" id="edit-bright" min="0" max="200" value="100" oninput="applyImgFilters()"></div>
+            <div class="slider-group"><span>Con</span><input type="range" id="edit-contrast" min="0" max="200" value="100" oninput="applyImgFilters()"></div>
+            <div class="slider-group"><span>Sat</span><input type="range" id="edit-sat" min="0" max="200" value="100" oninput="applyImgFilters()"></div>
+            <div class="slider-group"><span>Struct</span><input type="range" id="edit-struct" min="-1" max="1" step="0.1" value="0" oninput="applyImgFilters()"></div>
+            <div style="display: flex; justify-content: center; margin-top: 15px;">
+                <button class="icon-btn" id="edit-mirror-btn" onclick="toggleEditMirror()" style="width: auto; padding: 0 15px;">Mirror</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="audio-editor-layer" class="full-view" style="z-index: 45;">
+        <div class="nav-bar">
+            <button class="nav-btn" onclick="closeAudioEditor()">Cancel</button>
+            <span style="font-weight: 600;">Edit Audio</span>
+            <button class="nav-btn" onclick="saveAudioEdit()">Save</button>
+        </div>
+        <div class="editor-workspace">
+            <canvas id="audio-editor-canvas"></canvas>
+            <div class="audio-toolbar">
+                <button onclick="audioSelectAll()">Select All</button>
+                <button onclick="audioSplit()">Split</button>
+                <button onclick="audioDeleteSelected()" style="color:var(--danger)">Delete Seg</button>
+                <span class="undo-note">(Ctrl+Z/Y)</span>
+                <button onclick="undoAudio()">Undo</button>
+                <button onclick="redoAudio()">Redo</button>
+            </div>
+            <audio id="audio-playback" controls style="width: 100%; margin-top: 15px;"></audio>
+        </div>
+        <div class="editor-tools">
+            <div class="audio-effects">
+                <button class="effect-btn active" id="eff-norm" onclick="applyAudioEffect('norm')">Normal</button>
+                <button class="effect-btn" id="eff-high" onclick="applyAudioEffect('high')">Chipmunk</button>
+                <button class="effect-btn" id="eff-low" onclick="applyAudioEffect('low')">Deep</button>
+                <button class="effect-btn" onclick="applyAutoTrim()">Auto-Trim</button>
+                <button class="effect-btn" id="eff-level" onclick="applyAudioEffect('level')">Leveling</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('camera-view');
+        const audioVis = document.getElementById('audio-visualizer');
+        const shutterBtn = document.getElementById('shutter-btn');
+        const galleryThumb = document.getElementById('gallery-thumb');
+        const timerDisplay = document.getElementById('recording-timer');
+        const timerText = document.getElementById('timer-text');
+        
+        let stream = null;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let currentMode = 'photo';
+        let isRecording = false;
+        let facingMode = 'environment';
+        let db;
+        let isMirrored = false;
+        let recordingInterval;
+        let recSeconds = 0;
+
+        let softwareZoom = 1;
+        let softwareExp = 1;
+        let softwareStruct = 0;
+
+        let gallerySelectMode = false;
+        let selectedMediaIds = new Set();
+        let currentViewedItem = null;
+        
+        let galleryUrls = [];
+        let thumbUrl = null;
+        let viewerUrl = null;
+        let playbackUrl = null;
+
+        // Hidden canvas for video processing
+        let processCanvas = document.createElement('canvas');
+        let processCtx = processCanvas.getContext('2d');
+        let processAnimFrame;
+
+        const request = indexedDB.open('CameraUltimaDB', 1);
+        request.onupgradeneeded = (e) => { db = e.target.result; db.createObjectStore('media', { keyPath: 'id' }); };
+        request.onsuccess = (e) => { db = e.target.result; updateGalleryThumbnail(); };
+
+        async function initCamera() {
+            if (stream) stream.getTracks().forEach(t => t.stop());
+            
+            audioVis.style.display = currentMode === 'audio' ? 'flex' : 'none';
+            videoElement.style.display = currentMode === 'audio' ? 'none' : 'block';
+            document.getElementById('pro-btn').style.display = currentMode === 'audio' ? 'none' : 'flex';
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: currentMode === 'video' || currentMode === 'audio',
+                    video: currentMode === 'audio' ? false : { facingMode: facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } }
+                });
+                if (currentMode !== 'audio') {
+                    videoElement.srcObject = stream;
+                }
+                updateSettings();
+            } catch (err) { console.error("Device access error:", err); }
+        }
+
+        function setMode(mode, el) {
+            if (isRecording) return;
+            currentMode = mode;
+            document.querySelectorAll('.mode-text').forEach(m => m.classList.remove('active'));
+            el.classList.add('active');
+            document.getElementById('pro-panel').style.display = 'none';
+            initCamera();
+        }
+
+        function switchCamera() {
+            if (isRecording || currentMode === 'audio') return;
+            facingMode = facingMode === 'environment' ? 'user' : 'environment';
+            initCamera();
+        }
+
+        function toggleMirror() { 
+            isMirrored = !isMirrored; 
+            document.getElementById('mirror-btn').innerText = isMirrored ? 'Normal' : 'Mirror';
+            document.getElementById('mirror-btn').classList.toggle('active', isMirrored); 
+            updateSettings(); 
+        }
+
+        function togglePro() { const p = document.getElementById('pro-panel'); p.style.display = p.style.display === 'flex' ? 'none' : 'flex'; }
+
+        function updateSVGFilter(val) {
+            const f = document.getElementById('struct-filter');
+            if (val === 0) {
+                f.innerHTML = '';
+            } else if (val > 0) {
+                const s = val * 1.5;
+                const c = 1 + 4 * s;
+                f.innerHTML = `<feConvolveMatrix order="3" kernelMatrix="0 ${-s} 0 ${-s} ${c} ${-s} 0 ${-s} 0" />`;
+            } else {
+                const b = -val * 2;
+                f.innerHTML = `<feGaussianBlur stdDeviation="${b}" />`;
+            }
+        }
+
+        function getFilterString(exp, struct) {
+            let f = `brightness(${exp})`;
+            if (struct !== 0) f += ` url(#struct-filter)`;
+            return f;
+        }
+
+        function updateSettings() {
+            softwareZoom = parseFloat(document.getElementById('zoom-slider').value);
+            softwareExp = parseFloat(document.getElementById('exp-slider').value);
+            softwareStruct = parseFloat(document.getElementById('struct-slider').value);
+            
+            document.getElementById('zoom-val').innerText = softwareZoom.toFixed(1) + 'x';
+            document.getElementById('exp-val').innerText = softwareExp.toFixed(1);
+            document.getElementById('struct-val').innerText = softwareStruct.toFixed(1);
+
+            updateSVGFilter(softwareStruct);
+
+            let transformStr = `scale(${softwareZoom})`;
+            if (isMirrored) transformStr += ` scaleX(-1)`;
+            
+            videoElement.style.transform = transformStr;
+            videoElement.style.filter = getFilterString(softwareExp, softwareStruct);
+        }
+
+        function handleShutter() {
+            if (currentMode === 'photo') takePhoto();
+            else toggleRecording();
+        }
+
+        function drawProcessedFrame(ctx, width, height, exp, struct, zoom, mirror) {
+            ctx.filter = getFilterString(exp, struct);
+            ctx.save();
+            ctx.translate(width/2, height/2);
+            ctx.scale(zoom, zoom);
+            if (mirror) ctx.scale(-1, 1);
+            ctx.translate(-width/2, -height/2);
+            ctx.drawImage(videoElement, 0, 0, width, height);
+            ctx.restore();
+        }
+
+        function takePhoto() {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoElement.videoWidth; canvas.height = videoElement.videoHeight;
+            const ctx = canvas.getContext('2d');
+            
+            drawProcessedFrame(ctx, canvas.width, canvas.height, softwareExp, softwareStruct, softwareZoom, isMirrored);
+
+            canvas.toBlob(blob => saveMedia(blob, 'image/jpeg'), 'image/jpeg', 0.95);
+            document.body.style.background = 'white';
+            setTimeout(() => document.body.style.background = 'var(--bg-dark)', 50);
+        }
+
+        function startProcessedStream() {
+            processCanvas.width = videoElement.videoWidth;
+            processCanvas.height = videoElement.videoHeight;
+            const fps = 30;
+            const canvasStream = processCanvas.captureStream(fps);
+            
+            if (stream.getAudioTracks().length > 0) {
+                canvasStream.addTrack(stream.getAudioTracks()[0]);
+            }
+
+            function renderLoop() {
+                if (!isRecording) return;
+                processCtx.clearRect(0, 0, processCanvas.width, processCanvas.height);
+                drawProcessedFrame(processCtx, processCanvas.width, processCanvas.height, softwareExp, softwareStruct, softwareZoom, isMirrored);
+                processAnimFrame = requestAnimationFrame(renderLoop);
+            }
+            renderLoop();
+            return canvasStream;
+        }
+
+        function toggleRecording() {
+            if (!isRecording) {
+                recordedChunks = [];
+                isRecording = true;
+                
+                let targetStream = stream;
+                if (currentMode === 'video') {
+                    if (processCanvas.captureStream) {
+                        targetStream = startProcessedStream();
+                    }
+                }
+
+                const mime = currentMode === 'video' ? 'video/webm' : 'audio/webm';
+                try { mediaRecorder = new MediaRecorder(targetStream, { mimeType: mime }); } 
+                catch(e) { mediaRecorder = new MediaRecorder(targetStream); }
+                
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    const actualMime = mediaRecorder.mimeType || mime;
+                    saveMedia(new Blob(recordedChunks, { type: actualMime }), actualMime);
+                    clearInterval(recordingInterval);
+                    timerDisplay.style.display = 'none';
+                    cancelAnimationFrame(processAnimFrame);
+                };
+                mediaRecorder.start();
+                shutterBtn.classList.add('recording');
+                
+                recSeconds = 0;
+                timerText.innerText = '00:00';
+                timerDisplay.style.display = 'flex';
+                
+                if (currentMode === 'audio') document.getElementById('mic-indicator').style.transform = 'scale(1.2)';
+                
+                recordingInterval = setInterval(() => {
+                    recSeconds++;
+                    const m = Math.floor(recSeconds / 60).toString().padStart(2, '0');
+                    const s = (recSeconds % 60).toString().padStart(2, '0');
+                    timerText.innerText = `${m}:${s}`;
+                    if (currentMode === 'audio') document.getElementById('mic-indicator').style.transform = recSeconds % 2 === 0 ? 'scale(1.2)' : 'scale(1.0)';
+                }, 1000);
+            } else {
+                isRecording = false;
+                mediaRecorder.stop();
+                shutterBtn.classList.remove('recording');
+                if (currentMode === 'audio') document.getElementById('mic-indicator').style.transform = 'scale(1.0)';
+            }
+        }
+
+        function saveMedia(blob, type) {
+            return new Promise((resolve) => {
+                const tx = db.transaction('media', 'readwrite');
+                const item = { id: Date.now(), blob: blob, type: type, date: new Date().toISOString() };
+                tx.objectStore('media').add(item);
+                tx.oncomplete = () => {
+                    updateGalleryThumbnail();
+                    resolve(item);
+                };
+            });
+        }
+
+        function updateGalleryThumbnail() {
+            const tx = db.transaction('media', 'readonly');
+            tx.objectStore('media').getAll().onsuccess = (e) => {
+                const items = e.target.result.sort((a,b) => b.id - a.id);
+                
+                galleryThumb.style.visibility = 'visible';
+                
+                if (thumbUrl) { 
+                    URL.revokeObjectURL(thumbUrl); 
+                    thumbUrl = null; 
+                }
+                
+                if (items.length > 0) {
+                    if (items[0].type.includes('audio')) {
+                        galleryThumb.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 24 24" fill="%23ffd60a"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>';
+                    } else {
+                        thumbUrl = URL.createObjectURL(items[0].blob);
+                        galleryThumb.src = thumbUrl;
+                    }
+                } else {
+                    galleryThumb.removeAttribute('src');
+                }
+            };
+        }
+
+        function openGallery() {
+            document.getElementById('gallery-layer').style.display = 'flex';
+            gallerySelectMode = false; selectedMediaIds.clear();
+            updateGalleryUI(); renderGalleryGrid();
+        }
+        function closeGallery() { document.getElementById('gallery-layer').style.display = 'none'; }
+        function toggleSelectMode() { gallerySelectMode = !gallerySelectMode; selectedMediaIds.clear(); updateGalleryUI(); renderGalleryGrid(); }
+        function updateGalleryUI() { document.getElementById('select-btn').innerText = gallerySelectMode ? 'Cancel' : 'Select'; document.getElementById('gallery-toolbar').style.display = gallerySelectMode ? 'flex' : 'none'; }
+
+        function renderGalleryGrid() {
+            db.transaction('media', 'readonly').objectStore('media').getAll().onsuccess = (e) => {
+                const grid = document.getElementById('gallery-grid');
+                grid.innerHTML = '';
+                galleryUrls.forEach(url => URL.revokeObjectURL(url));
+                galleryUrls = [];
+                
+                const items = e.target.result.sort((a,b) => b.id - a.id);
+                if (items.length === 0) {
+                    grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: #888; font-size: 14px; font-weight: 500;">Nothing here yet</div>';
+                    return;
+                }
+                items.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'gallery-item' + (gallerySelectMode ? ' selecting' : '') + (selectedMediaIds.has(item.id) ? ' selected' : '');
+                    const url = URL.createObjectURL(item.blob);
+                    galleryUrls.push(url);
+                    
+                    if (item.type.includes('video')) div.innerHTML = `<video src="${url}#t=0.1"></video><div class="media-badge">VIDEO</div><div class="select-overlay"></div>`;
+                    else if (item.type.includes('audio')) div.innerHTML = `<div class="audio-placeholder">AUDIO</div><div class="select-overlay"></div>`;
+                    else div.innerHTML = `<img src="${url}"><div class="select-overlay"></div>`;
+
+                    div.onclick = () => {
+                        if (gallerySelectMode) {
+                            if (selectedMediaIds.has(item.id)) {
+                                selectedMediaIds.delete(item.id);
+                                div.classList.remove('selected');
+                            } else {
+                                selectedMediaIds.add(item.id);
+                                div.classList.add('selected');
+                            }
+                        } else {
+                            openViewer(item);
+                        }
+                    };
+                    grid.appendChild(div);
+                });
+            };
+        }
+
+        function deleteSelected() {
+            if (selectedMediaIds.size === 0) return;
+            const tx = db.transaction('media', 'readwrite');
+            const store = tx.objectStore('media');
+            selectedMediaIds.forEach(id => store.delete(id));
+            tx.oncomplete = () => { 
+                selectedMediaIds.clear(); 
+                gallerySelectMode = false;
+                updateGalleryUI();
+                updateGalleryThumbnail(); 
+                renderGalleryGrid(); 
+            };
+        }
+
+        function openViewer(item) {
+            currentViewedItem = item;
+            document.getElementById('viewer-layer').style.display = 'flex';
+            const container = document.getElementById('viewer-container');
+            container.innerHTML = '';
+            document.getElementById('viewer-title').innerText = new Date(item.date).toLocaleString();
+            document.getElementById('btn-edit').style.display = item.type.includes('image') || item.type.includes('audio') ? 'block' : 'none';
+
+            if (viewerUrl) URL.revokeObjectURL(viewerUrl);
+            viewerUrl = URL.createObjectURL(item.blob);
+
+            if (item.type.includes('video') || item.type.includes('audio')) {
+                const m = document.createElement(item.type.includes('video') ? 'video' : 'audio');
+                m.src = viewerUrl; m.controls = true; m.id = 'viewer-media'; m.autoplay = true;
+                if (item.type.includes('audio')) m.style.width = '80%';
+                container.appendChild(m);
+            } else {
+                const img = document.createElement('img');
+                img.src = viewerUrl; img.id = 'viewer-media';
+                container.appendChild(img);
+            }
+        }
+
+        function closeViewer() {
+            document.getElementById('viewer-layer').style.display = 'none';
+            const m = document.getElementById('viewer-media');
+            if (m) { m.pause(); m.removeAttribute('src'); }
+            currentViewedItem = null;
+            if (viewerUrl) { URL.revokeObjectURL(viewerUrl); viewerUrl = null; }
+        }
+
+        function deleteCurrentMedia() {
+            if (!currentViewedItem) return;
+            const tx = db.transaction('media', 'readwrite');
+            tx.objectStore('media').delete(currentViewedItem.id);
+            tx.oncomplete = () => { closeViewer(); renderGalleryGrid(); updateGalleryThumbnail(); };
+        }
+
+        // Image Editor
+        let editImgObj = new Image();
+        let editMirror = false;
+        
+        function openEditor() {
+            if (!currentViewedItem) return;
+            try {
+                const m = document.getElementById('viewer-media');
+                if (m) m.pause();
+            } catch(e) {}
+
+            if (currentViewedItem.type.includes('image')) {
+                document.getElementById('img-editor-layer').style.display = 'flex';
+                ['bright', 'contrast', 'sat', 'struct'].forEach(id => document.getElementById(`edit-${id}`).value = id === 'struct' ? 0 : 100);
+                editMirror = false;
+                document.getElementById('edit-mirror-btn').innerText = 'Mirror';
+                document.getElementById('edit-mirror-btn').classList.remove('active');
+                editImgObj.onload = applyImgFilters;
+                editImgObj.src = viewerUrl;
+            } else if (currentViewedItem.type.includes('audio')) {
+                openAudioEditor();
+            }
+        }
+        
+        function closeImgEditor() { 
+            document.getElementById('img-editor-layer').style.display = 'none'; 
+        }
+
+        function toggleEditMirror() {
+            editMirror = !editMirror;
+            document.getElementById('edit-mirror-btn').innerText = editMirror ? 'Normal' : 'Mirror';
+            document.getElementById('edit-mirror-btn').classList.toggle('active', editMirror);
+            applyImgFilters();
+        }
+
+        function applyImgFilters() {
+            const c = document.getElementById('edit-canvas');
+            const ctx = c.getContext('2d');
+            c.width = editImgObj.width; c.height = editImgObj.height;
+            
+            const b = document.getElementById('edit-bright').value;
+            const con = document.getElementById('edit-contrast').value;
+            const sat = document.getElementById('edit-sat').value;
+            const struct = document.getElementById('edit-struct').value;
+
+            updateSVGFilter(parseFloat(struct));
+
+            ctx.filter = `brightness(${b}%) contrast(${con}%) saturate(${sat}%) ${struct != 0 ? 'url(#struct-filter)' : ''}`;
+            
+            ctx.save();
+            if (editMirror) {
+                ctx.translate(c.width, 0);
+                ctx.scale(-1, 1);
+            }
+            ctx.drawImage(editImgObj, 0, 0);
+            ctx.restore();
+        }
+        
+        function saveImgEdit() { 
+            document.getElementById('edit-canvas').toBlob(async blob => { 
+                const newItem = await saveMedia(blob, 'image/jpeg'); 
+                closeImgEditor(); 
+                openViewer(newItem); 
+                renderGalleryGrid(); 
+            }, 'image/jpeg', 0.95); 
+        }
+
+        // Advanced Audio Editor
+        let audioCtx, audioSegments = [], playheadTime = 0, totalAudioDuration = 0;
+        let audioHistory = [];
+        let redoHistory = [];
+        let currentPitchEffect = 'norm';
+        let isLevelingActive = false;
+        
+        function cloneAudioBuffer(buf) {
+            try {
+                if (!buf || buf.length === 0) return audioCtx.createBuffer(1, 1, audioCtx.sampleRate || 44100);
+                const clone = audioCtx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+                for(let i=0; i<buf.numberOfChannels; i++) clone.getChannelData(i).set(buf.getChannelData(i));
+                return clone;
+            } catch(e) {
+                console.error("Clone buffer failed", e);
+                return audioCtx.createBuffer(1, 1, audioCtx.sampleRate || 44100);
+            }
+        }
+
+        async function openAudioEditor() {
+            try {
+                document.getElementById('audio-editor-layer').style.display = 'flex';
+                
+                const canvas = document.getElementById('audio-editor-canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = canvas.offsetWidth || 300;
+                canvas.height = canvas.offsetHeight || 200;
+                ctx.fillStyle = '#111';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ffd60a';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Loading Audio Data...', canvas.width/2, canvas.height/2);
+
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const arrayBuffer = await currentViewedItem.blob.arrayBuffer();
+                
+                const buffer = await new Promise((resolve, reject) => {
+                    const promise = audioCtx.decodeAudioData(arrayBuffer, resolve, reject);
+                    if (promise) promise.catch(reject);
+                });
+
+                const originalBuffer = cloneAudioBuffer(buffer);
+                audioSegments = [{ id: 1, buffer: buffer, originalBuffer: originalBuffer, selected: true }];
+                playheadTime = 0;
+                audioHistory = [];
+                redoHistory = [];
+                currentPitchEffect = 'norm';
+                isLevelingActive = false;
+                
+                document.querySelectorAll('.effect-btn').forEach(b => b.classList.remove('active'));
+                if (document.getElementById('eff-norm')) {
+                    document.getElementById('eff-norm').classList.add('active');
+                }
+                
+                requestAnimationFrame(() => {
+                    renderAudioEditor();
+                    canvas.setAttribute('tabindex', '0');
+                    canvas.focus();
+                });
+            } catch (err) {
+                console.error("Audio Load Error:", err);
+                const canvas = document.getElementById('audio-editor-canvas');
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = 'red';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Audio decoding failed or corrupted file.', canvas.width/2, canvas.height/2);
+                }
+            }
+        }
+
+        function closeAudioEditor() { 
+            try { document.getElementById('audio-editor-layer').style.display = 'none'; } catch(e){}
+            try {
+                const pb = document.getElementById('audio-playback');
+                if (pb) {
+                    pb.pause();
+                    pb.removeAttribute('src');
+                    pb.load();
+                }
+            } catch(e){}
+            try {
+                const m = document.getElementById('viewer-media');
+                if (m) m.pause();
+            } catch(e){}
+            if (playbackUrl) { 
+                try { URL.revokeObjectURL(playbackUrl); } catch(e){}
+                playbackUrl = null; 
+            }
+            if (audioCtx && audioCtx.state !== 'closed') {
+                try { audioCtx.close(); } catch(e){}
+            }
+            audioSegments = [];
+            audioHistory = [];
+            redoHistory = [];
+        }
+
+        function saveAudioState() {
+            try {
+                const copy = audioSegments.map(seg => ({ 
+                    id: seg.id, 
+                    buffer: cloneAudioBuffer(seg.buffer), 
+                    originalBuffer: cloneAudioBuffer(seg.originalBuffer), 
+                    selected: seg.selected 
+                }));
+                audioHistory.push({ segments: copy, pitch: currentPitchEffect, leveling: isLevelingActive });
+                if (audioHistory.length > 20) audioHistory.shift();
+                redoHistory = [];
+            } catch(e) {}
+        }
+
+        function undoAudio() {
+            try {
+                if (audioHistory.length > 0) {
+                    const copy = audioSegments.map(seg => ({ 
+                        id: seg.id, 
+                        buffer: cloneAudioBuffer(seg.buffer), 
+                        originalBuffer: cloneAudioBuffer(seg.originalBuffer), 
+                        selected: seg.selected 
+                    }));
+                    redoHistory.push({ segments: copy, pitch: currentPitchEffect, leveling: isLevelingActive });
+
+                    const state = audioHistory.pop();
+                    audioSegments = state.segments.map(seg => ({
+                        id: seg.id,
+                        buffer: cloneAudioBuffer(seg.buffer),
+                        originalBuffer: cloneAudioBuffer(seg.originalBuffer),
+                        selected: seg.selected
+                    }));
+                    currentPitchEffect = state.pitch;
+                    isLevelingActive = state.leveling;
+                    
+                    playheadTime = 0;
+                    document.getElementById('audio-playback').pause();
+                    
+                    updateEffectUI();
+                    renderAudioEditor();
+                }
+            } catch(e) {}
+        }
+
+        function redoAudio() {
+            try {
+                if (redoHistory.length > 0) {
+                    const copy = audioSegments.map(seg => ({ 
+                        id: seg.id, 
+                        buffer: cloneAudioBuffer(seg.buffer), 
+                        originalBuffer: cloneAudioBuffer(seg.originalBuffer), 
+                        selected: seg.selected 
+                    }));
+                    audioHistory.push({ segments: copy, pitch: currentPitchEffect, leveling: isLevelingActive });
+
+                    const state = redoHistory.pop();
+                    audioSegments = state.segments.map(seg => ({
+                        id: seg.id,
+                        buffer: cloneAudioBuffer(seg.buffer),
+                        originalBuffer: cloneAudioBuffer(seg.originalBuffer),
+                        selected: seg.selected
+                    }));
+                    currentPitchEffect = state.pitch;
+                    isLevelingActive = state.leveling;
+                    
+                    playheadTime = 0;
+                    document.getElementById('audio-playback').pause();
+                    
+                    updateEffectUI();
+                    renderAudioEditor();
+                }
+            } catch(e) {}
+        }
+
+        function updateEffectUI() {
+            document.querySelectorAll('.effect-btn').forEach(b => {
+                if (b.id !== 'eff-level') b.classList.remove('active');
+            });
+            if (document.getElementById(`eff-${currentPitchEffect}`)) {
+                document.getElementById(`eff-${currentPitchEffect}`).classList.add('active');
+            }
+            const levelBtn = document.getElementById('eff-level');
+            if (levelBtn) {
+                if (isLevelingActive) levelBtn.classList.add('active');
+                else levelBtn.classList.remove('active');
+            }
+        }
+
+        window.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && document.getElementById('audio-editor-layer').style.display === 'flex') {
+                e.preventDefault();
+                undoAudio();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && document.getElementById('audio-editor-layer').style.display === 'flex') {
+                e.preventDefault();
+                redoAudio();
+            }
+        });
+
+        function renderAudioEditor() {
+            try {
+                const canvas = document.getElementById('audio-editor-canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = canvas.offsetWidth || 300; 
+                canvas.height = canvas.offsetHeight || 200;
+                
+                if (!audioSegments || audioSegments.length === 0) {
+                    ctx.clearRect(0,0,canvas.width,canvas.height); 
+                    updateAudioPlayback(); 
+                    return; 
+                }
+
+                totalAudioDuration = audioSegments.reduce((sum, seg) => sum + (seg.buffer ? seg.buffer.duration : 0), 0);
+                if (totalAudioDuration <= 0 || isNaN(totalAudioDuration)) { 
+                    ctx.clearRect(0,0,canvas.width,canvas.height); 
+                    updateAudioPlayback(); 
+                    return; 
+                }
+
+                ctx.fillStyle = '#111'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                let currentX = 0;
+
+                audioSegments.forEach(seg => {
+                    if (!seg.buffer) return;
+                    const segWidth = (seg.buffer.duration / totalAudioDuration) * canvas.width;
+                    if (segWidth <= 0) return;
+
+                    ctx.fillStyle = seg.selected ? 'rgba(255,214,10,0.2)' : 'transparent';
+                    ctx.fillRect(currentX, 0, segWidth, canvas.height);
+                    
+                    ctx.fillStyle = seg.selected ? '#ffd60a' : '#888';
+                    const data = seg.buffer.getChannelData(0);
+                    const step = Math.max(1, Math.floor(data.length / segWidth));
+                    const amp = canvas.height / 2;
+                    
+                    for(let i=0; i<segWidth; i++){
+                        let min = 1.0, max = -1.0;
+                        for(let j=0; j<step; j++){
+                            const datum = data[Math.floor((i*step)+j)] || 0;
+                            if (datum < min) min = datum;
+                            if (datum > max) max = datum;
+                        }
+                        ctx.fillRect(currentX + i, (1+min)*amp, 1, Math.max(1, (max-min)*amp));
+                    }
+                    
+                    ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(currentX + segWidth, 0); ctx.lineTo(currentX + segWidth, canvas.height); ctx.stroke();
+                    currentX += segWidth;
+                });
+
+                const phX = (playheadTime / totalAudioDuration) * canvas.width;
+                ctx.fillStyle = 'red'; ctx.fillRect(phX - 1, 0, 2, canvas.height);
+
+                updateAudioPlayback();
+            } catch (err) {
+                console.error("Render failed:", err);
+            }
+        }
+
+        document.getElementById('audio-editor-canvas').addEventListener('pointerdown', e => {
+            if (!audioSegments || audioSegments.length === 0) return;
+            try {
+                const rect = e.target.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                playheadTime = (x / rect.width) * totalAudioDuration;
+                
+                let cTime = 0;
+                audioSegments.forEach(seg => {
+                    if (seg.buffer) {
+                        if (playheadTime >= cTime && playheadTime <= cTime + seg.buffer.duration) {
+                            seg.selected = !seg.selected;
+                        }
+                        cTime += seg.buffer.duration;
+                    }
+                });
+                renderAudioEditor();
+            } catch(err) {}
+        });
+
+        function audioSelectAll() {
+            try {
+                if (!audioSegments) return;
+                const anyUnselected = audioSegments.some(s => !s.selected);
+                audioSegments.forEach(s => s.selected = anyUnselected);
+                renderAudioEditor();
+            } catch(e) {}
+        }
+
+        function audioSplit() {
+            try {
+                if (!audioSegments || audioSegments.length === 0) return;
+                
+                let cTime = 0;
+                let targetIdx = -1;
+                let splitS = 0, oSplitS = 0, splitT = 0;
+
+                for (let i = 0; i < audioSegments.length; i++) {
+                    let seg = audioSegments[i];
+                    if (seg.buffer) {
+                        if (playheadTime > cTime && playheadTime < cTime + seg.buffer.duration) {
+                            splitT = playheadTime - cTime;
+                            splitS = Math.floor(splitT * seg.buffer.sampleRate);
+                            oSplitS = Math.floor((splitT / seg.buffer.duration) * seg.originalBuffer.length);
+                            
+                            if (splitS > 0 && splitS < seg.buffer.length && oSplitS > 0 && oSplitS < seg.originalBuffer.length) {
+                                targetIdx = i;
+                            }
+                            break;
+                        }
+                        cTime += seg.buffer.duration;
+                    }
+                }
+
+                if (targetIdx === -1) return;
+
+                saveAudioState();
+                document.getElementById('audio-playback').pause();
+                
+                let seg = audioSegments[targetIdx];
+                let b1 = audioCtx.createBuffer(seg.buffer.numberOfChannels, splitS, seg.buffer.sampleRate);
+                let b2 = audioCtx.createBuffer(seg.buffer.numberOfChannels, seg.buffer.length - splitS, seg.buffer.sampleRate);
+                for (let c = 0; c < seg.buffer.numberOfChannels; c++) {
+                    let data = seg.buffer.getChannelData(c);
+                    b1.getChannelData(c).set(data.subarray(0, splitS));
+                    b2.getChannelData(c).set(data.subarray(splitS));
+                }
+
+                let ob1 = audioCtx.createBuffer(seg.originalBuffer.numberOfChannels, oSplitS, seg.originalBuffer.sampleRate);
+                let ob2 = audioCtx.createBuffer(seg.originalBuffer.numberOfChannels, seg.originalBuffer.length - oSplitS, seg.originalBuffer.sampleRate);
+                for (let c = 0; c < seg.originalBuffer.numberOfChannels; c++) {
+                    let data = seg.originalBuffer.getChannelData(c);
+                    ob1.getChannelData(c).set(data.subarray(0, oSplitS));
+                    ob2.getChannelData(c).set(data.subarray(oSplitS));
+                }
+                
+                audioSegments.splice(targetIdx, 1, 
+                    { id: Date.now(), buffer: b1, originalBuffer: ob1, selected: false }, 
+                    { id: Date.now()+1, buffer: b2, originalBuffer: ob2, selected: false }
+                );
+                renderAudioEditor();
+            } catch(e) {
+                console.error("Split failed:", e);
+            }
+        }
+
+        function audioDeleteSelected() {
+            try {
+                if (!audioSegments || !audioSegments.some(s => s.selected)) return;
+                saveAudioState();
+                document.getElementById('audio-playback').pause();
+                audioSegments = audioSegments.filter(s => !s.selected);
+                playheadTime = 0;
+                renderAudioEditor();
+            } catch(e) {}
+        }
+
+        function applyAutoTrim() {
+            try {
+                if (!audioSegments || audioSegments.length === 0) return;
+                
+                saveAudioState();
+                document.getElementById('audio-playback').pause();
+                
+                let newSegments = [];
+                audioSegments.forEach(seg => {
+                    if (!seg.buffer) return;
+                    const data = seg.buffer.getChannelData(0);
+                    
+                    let sumSquares = 0;
+                    for(let i=0; i<data.length; i++) sumSquares += data[i]*data[i];
+                    const rms = Math.sqrt(sumSquares / data.length);
+                    const threshold = Math.max(rms * 0.8, 0.01);
+                    
+                    const chunkSize = Math.floor(seg.buffer.sampleRate * 0.1); 
+                    let chunksToKeep = [];
+                    let oChunksToKeep = [];
+                    let ratio = seg.originalBuffer.length / seg.buffer.length;
+                    
+                    for (let i = 0; i < data.length; i += chunkSize) {
+                        let maxAmp = 0;
+                        for (let j = 0; j < chunkSize && (i+j) < data.length; j++) {
+                            if (Math.abs(data[i+j]) > maxAmp) maxAmp = Math.abs(data[i+j]);
+                        }
+                        if (maxAmp > threshold) {
+                            chunksToKeep.push({ start: i, end: i + chunkSize });
+                            oChunksToKeep.push({ start: Math.floor(i * ratio), end: Math.floor((i + chunkSize) * ratio) });
+                        }
+                    }
+                    
+                    if (chunksToKeep.length > 0) {
+                        const newLen = chunksToKeep.reduce((acc, val) => acc + (val.end - val.start), 0);
+                        const oNewLen = oChunksToKeep.reduce((acc, val) => acc + (val.end - val.start), 0);
+                        
+                        if (newLen > 0 && oNewLen > 0) {
+                            let nBuf = audioCtx.createBuffer(seg.buffer.numberOfChannels, newLen, seg.buffer.sampleRate);
+                            for (let c = 0; c < seg.buffer.numberOfChannels; c++) {
+                                let cData = seg.buffer.getChannelData(c);
+                                let nData = nBuf.getChannelData(c);
+                                let offset = 0;
+                                for (let chunk of chunksToKeep) {
+                                    nData.set(cData.subarray(chunk.start, Math.min(chunk.end, cData.length)), offset);
+                                    offset += (chunk.end - chunk.start);
+                                }
+                            }
+
+                            let oBuf = audioCtx.createBuffer(seg.originalBuffer.numberOfChannels, oNewLen, seg.originalBuffer.sampleRate);
+                            for (let c = 0; c < seg.originalBuffer.numberOfChannels; c++) {
+                                let oData = seg.originalBuffer.getChannelData(c);
+                                let oNewData = oBuf.getChannelData(c);
+                                let oOffset = 0;
+                                for (let chunk of oChunksToKeep) {
+                                    oNewData.set(oData.subarray(chunk.start, Math.min(chunk.end, oData.length)), oOffset);
+                                    oOffset += (chunk.end - chunk.start);
+                                }
+                            }
+
+                            newSegments.push({ id: Date.now() + Math.random(), buffer: nBuf, originalBuffer: oBuf, selected: true });
+                        }
+                    }
+                });
+                
+                if (newSegments.length > 0) {
+                    audioSegments = newSegments;
+                }
+                renderAudioEditor();
+            } catch(e) {
+                console.error("Auto trim failed:", e);
+                undoAudio();
+            }
+        }
+
+        async function processBufferWithCompressor(buffer) {
+            try {
+                if (!buffer || buffer.length === 0) return cloneAudioBuffer(buffer);
+                const offlineCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+                const source = offlineCtx.createBufferSource();
+                source.buffer = buffer;
+
+                const compressor = offlineCtx.createDynamicsCompressor();
+                compressor.threshold.value = -24; 
+                compressor.knee.value = 12;
+                compressor.ratio.value = 4;
+                compressor.attack.value = 0.005;
+                compressor.release.value = 0.25;
+
+                const makeupGain = offlineCtx.createGain();
+                makeupGain.gain.value = 2.5; 
+
+                const limiter = offlineCtx.createDynamicsCompressor();
+                limiter.threshold.value = -2;
+                limiter.knee.value = 0;
+                limiter.ratio.value = 20;
+                limiter.attack.value = 0.001;
+                limiter.release.value = 0.05;
+
+                source.connect(compressor);
+                compressor.connect(makeupGain);
+                makeupGain.connect(limiter);
+                limiter.connect(offlineCtx.destination);
+
+                source.start(0);
+                return await offlineCtx.startRendering();
+            } catch (err) {
+                console.error("Leveling failed:", err);
+                return cloneAudioBuffer(buffer);
+            }
+        }
+
+        async function applyAudioEffect(type) {
+            try {
+                if (!audioSegments || audioSegments.length === 0) return;
+                
+                if (type === 'level') {
+                    isLevelingActive = !isLevelingActive;
+                } else {
+                    if (currentPitchEffect === type) return;
+                    currentPitchEffect = type;
+                }
+                
+                saveAudioState();
+                document.getElementById('audio-playback').pause();
+                updateEffectUI();
+                
+                for (let i = 0; i < audioSegments.length; i++) {
+                    let seg = audioSegments[i];
+                    if (!seg.originalBuffer) continue;
+                    
+                    let workingBuffer = seg.originalBuffer;
+                    
+                    if (currentPitchEffect !== 'norm') {
+                        let rate = currentPitchEffect === 'high' ? 1.5 : (currentPitchEffect === 'low' ? 0.7 : 1.0);
+                        let nLen = Math.floor(workingBuffer.length / rate);
+                        if (nLen <= 0) nLen = 1;
+                        let nBuf = audioCtx.createBuffer(workingBuffer.numberOfChannels, nLen, workingBuffer.sampleRate);
+                        for(let c=0; c<workingBuffer.numberOfChannels; c++) {
+                            let oData = workingBuffer.getChannelData(c);
+                            let nData = nBuf.getChannelData(c);
+                            for(let j=0; j<nLen; j++) nData[j] = oData[Math.floor(j * rate)];
+                        }
+                        workingBuffer = nBuf;
+                    }
+                    
+                    if (isLevelingActive) {
+                        workingBuffer = await processBufferWithCompressor(workingBuffer);
+                    } else if (currentPitchEffect === 'norm') {
+                        workingBuffer = cloneAudioBuffer(seg.originalBuffer);
+                    }
+                    
+                    seg.buffer = workingBuffer;
+                }
+                renderAudioEditor();
+            } catch (err) {
+                console.error("Effect application failed:", err);
+                undoAudio();
+            }
+        }
+
+        function updateAudioPlayback() {
+            try {
+                if (playbackUrl) URL.revokeObjectURL(playbackUrl);
+                if (!audioSegments || audioSegments.length === 0) {
+                    const pb = document.getElementById('audio-playback');
+                    if(pb) {
+                        pb.removeAttribute('src');
+                        pb.load();
+                    }
+                    return;
+                }
+                const totalLen = audioSegments.reduce((sum, seg) => sum + (seg.buffer ? seg.buffer.length : 0), 0);
+                if (totalLen <= 0) return;
+
+                const numChannels = audioSegments[0].buffer ? audioSegments[0].buffer.numberOfChannels : 1;
+                const sampleRate = audioSegments[0].buffer ? audioSegments[0].buffer.sampleRate : 44100;
+                const merged = audioCtx.createBuffer(numChannels, totalLen, sampleRate);
+                
+                for (let c = 0; c < numChannels; c++) {
+                    const mData = merged.getChannelData(c);
+                    let offset = 0;
+                    audioSegments.forEach(seg => {
+                        if(seg.buffer && c < seg.buffer.numberOfChannels) {
+                            mData.set(seg.buffer.getChannelData(c), offset);
+                            offset += seg.buffer.length;
+                        }
+                    });
+                }
+                playbackUrl = URL.createObjectURL(bufferToWavBlob(merged));
+                const pb = document.getElementById('audio-playback');
+                if (pb) pb.src = playbackUrl;
+            } catch (err) {
+                console.error("Playback update failed:", err);
+            }
+        }
+
+        async function saveAudioEdit() {
+            try {
+                if (!audioSegments || audioSegments.length === 0) return;
+                const totalLen = audioSegments.reduce((sum, seg) => sum + (seg.buffer ? seg.buffer.length : 0), 0);
+                if (totalLen <= 0) return;
+
+                const numChannels = audioSegments[0].buffer ? audioSegments[0].buffer.numberOfChannels : 1;
+                const sampleRate = audioSegments[0].buffer ? audioSegments[0].buffer.sampleRate : 44100;
+                const merged = audioCtx.createBuffer(numChannels, totalLen, sampleRate);
+                
+                for (let c = 0; c < numChannels; c++) {
+                    let offset = 0;
+                    audioSegments.forEach(seg => { 
+                        if(seg.buffer && c < seg.buffer.numberOfChannels) {
+                            merged.getChannelData(c).set(seg.buffer.getChannelData(c), offset); 
+                            offset += seg.buffer.length; 
+                        }
+                    });
+                }
+                
+                const wavBlob = bufferToWavBlob(merged);
+                const newItem = await saveMedia(wavBlob, 'audio/wav');
+                closeAudioEditor(); 
+                openViewer(newItem); 
+                renderGalleryGrid();
+            } catch (err) {
+                console.error("Save failed:", err);
+                closeAudioEditor();
+            }
+        }
+
+        function bufferToWavBlob(buffer) {
+            try {
+                const numChannels = buffer.numberOfChannels || 1;
+                const len = buffer.length * 2 * numChannels;
+                const view = new DataView(new ArrayBuffer(44 + len));
+                const writeStr = (str, off) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+                
+                writeStr('RIFF', 0); view.setUint32(4, 36 + len, true); writeStr('WAVE', 8); writeStr('fmt ', 12);
+                view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, numChannels, true);
+                view.setUint32(24, buffer.sampleRate, true); view.setUint32(28, buffer.sampleRate * 2 * numChannels, true);
+                view.setUint16(32, 2 * numChannels, true); view.setUint16(34, 16, true); writeStr('data', 36); view.setUint32(40, len, true);
+
+                let offset = 44;
+                const channels = [];
+                for(let c=0; c<numChannels; c++) channels.push(buffer.getChannelData(c));
+
+                for (let i = 0; i < buffer.length; i++) {
+                    for (let channel = 0; channel < numChannels; channel++) {
+                        let s = Math.max(-1, Math.min(1, channels[channel][i]));
+                        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                        offset += 2;
+                    }
+                }
+                return new Blob([view], { type: 'audio/wav' });
+            } catch (err) {
+                console.error("WAV compile error:", err);
+                return new Blob([], { type: 'audio/wav' });
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', initCamera);
+    </script>
+</body>
+</html>
