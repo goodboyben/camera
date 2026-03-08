@@ -34,3 +34,5 @@ Just a simple, private, offline camera application
 * Run CameraLauncher.exe
 
 A browser window should open, and you'll be all set!
+
+> Also available at [goodboyben.github.io/camera](https://goodboyben.github.io/camera), but this is potentially less private, as it goes through GitHub.
